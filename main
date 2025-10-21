@@ -1,1 +1,163 @@
+import maya.cmds as cmds
 
+# FK creation
+def create_control_rig():
+    SEL = cmds.ls(selection=True)
+    count = len(SEL)
+
+    for obj in SEL:
+        ctrl = cmds.circle(nr=(0, 1, 0), ch=False, name=f"{obj}_CTRL")[0]
+        offsetB = cmds.group(name=f"{obj}_offsetB", empty=True)
+        offsetA = cmds.group(name=f"{obj}_offsetA", empty=True)
+        grp = cmds.group(name=f"{obj}_GRP", empty=True)
+
+        cmds.parent(ctrl, offsetB)
+        cmds.parent(offsetB, offsetA)
+        cmds.parent(offsetA, grp)
+
+        cmds.delete(cmds.parentConstraint(obj, grp))
+        cmds.parentConstraint(ctrl, obj, maintainOffset=True)
+
+    for i in range(count - 1, 0, -1):
+        cmds.parent(f"{SEL[i]}_GRP", f"{SEL[i - 1]}_CTRL")
+
+# Controller colorizer
+def apply_control_color(r, g, b):
+    selected = cmds.ls(selection=True)
+    for ctrl in selected:
+        shapes = cmds.listRelatives(ctrl, shapes=True, fullPath=True)
+        if shapes:
+            for shape in shapes:
+                cmds.setAttr(shape + ".overrideEnabled", 1)
+                cmds.setAttr(shape + ".overrideRGBColors", 1)
+                cmds.setAttr(shape + ".overrideColorRGB", r, g, b)
+
+# Controller shaper
+def apply_shape(shape_type):
+    selected = cmds.ls(selection=True)
+    for obj in selected:
+        old_shapes = cmds.listRelatives(obj, shapes=True, fullPath=True)
+        if old_shapes:
+            cmds.delete(old_shapes)
+
+        if shape_type == "circle":
+            new_shape = cmds.circle(name=obj + "_circleShape", ch=False)[0]
+        elif shape_type == "box":
+            new_shape = cmds.curve(name=obj + "_boxShape", d=1,
+                p=[[-1,1,1],[1,1,1],[1,-1,1],[-1,-1,1],[-1,1,1],
+                   [-1,1,-1],[-1,-1,-1],[1,-1,-1],[1,1,-1],
+                   [-1,1,-1],[1,1,-1],[1,1,1],[1,-1,1],[1,-1,-1],
+                   [-1,-1,-1],[-1,-1,1]], 
+                k=list(range(16)))
+        elif shape_type == "star":
+            new_shape = cmds.curve(name=obj + "_starShape", d=1,
+                p=[[1,0,0],[0.2,0,0.2],[0,0,1],[-0.2,0,0.2],[-1,0,0],
+                   [-0.2,0,-0.2],[0,0,-1],[0.2,0,-0.2],[1,0,0]],
+                k=list(range(9)))
+        elif shape_type == "arrow":
+            new_shape = cmds.curve(name=obj + "_arrowShape", d=1,
+                p=[[0,0,1],[0.2,0,0.5],[0.1,0,0.5],[0.1,0,-1],
+                   [-0.1,0,-1],[-0.1,0,0.5],[-0.2,0,0.5],[0,0,1]],
+                k=list(range(8)))
+        elif shape_type == "cube":
+            new_shape = cmds.curve(name=obj + "_cubeShape", d=1,
+                p=[[0.5,0.5,0.5],[-0.5,0.5,0.5],[-0.5,-0.5,0.5],
+                   [0.5,-0.5,0.5],[0.5,0.5,0.5],[0.5,0.5,-0.5],
+                   [0.5,-0.5,-0.5],[0.5,-0.5,0.5],[-0.5,-0.5,0.5],
+                   [-0.5,-0.5,-0.5],[-0.5,0.5,-0.5],[-0.5,0.5,0.5],
+                   [-0.5,0.5,-0.5],[0.5,0.5,-0.5],[0.5,-0.5,-0.5],
+                   [-0.5,-0.5,-0.5]], k=list(range(16)))
+        else:
+            return
+
+        shapes = cmds.listRelatives(new_shape, shapes=True, fullPath=True)
+        if shapes:
+            for s in shapes:
+                cmds.parent(s, obj, shape=True, r=True)
+        cmds.delete(new_shape)
+
+# Reset all transformations function
+def reset_transformations():
+    selected = cmds.ls(selection=True)
+    if not selected:
+        cmds.warning("No objects selected. Please select controllers to reset.")
+        return
+    
+    reset_count = 0
+    for ctrl in selected:
+        try:
+            # Check if the object exists and has transform attributes
+            if cmds.objExists(ctrl):
+                # Reset translation X, Y, Z to 0
+                cmds.setAttr(f"{ctrl}.translateX", 0)
+                cmds.setAttr(f"{ctrl}.translateY", 0)
+                cmds.setAttr(f"{ctrl}.translateZ", 0)
+                
+                # Reset rotation X, Y, Z to 0
+                cmds.setAttr(f"{ctrl}.rotateX", 0)
+                cmds.setAttr(f"{ctrl}.rotateY", 0)
+                cmds.setAttr(f"{ctrl}.rotateZ", 0)
+                
+                # Reset scale X, Y, Z to 1
+                cmds.setAttr(f"{ctrl}.scaleX", 1)
+                cmds.setAttr(f"{ctrl}.scaleY", 1)
+                cmds.setAttr(f"{ctrl}.scaleZ", 1)
+                
+                reset_count += 1
+        except:
+            cmds.warning(f"Could not reset transformations for {ctrl}")
+    
+    if reset_count > 0:
+        print(f"Successfully reset all transformations for {reset_count} controller(s)")
+
+def show_ui():
+    if cmds.window("controlRigUI", exists=True):
+        cmds.deleteUI("controlRigUI")
+
+    window = cmds.window("controlRigUI", title=" FK Setup Tool", widthHeight=(340, 520), sizeable=False)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=10, columnAlign="center", bgc=(0.15, 0.15, 0.15))
+
+    cmds.separator(h=10, style="none")
+    cmds.frameLayout(label=" FK Setup", collapsable=True, bgc=(0.2, 0.2, 0.2), mw=10, mh=5)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=8)
+    cmds.text(label=" Select objects and click below to create FK setup ", align="center", height=30)
+    cmds.button(label="🔧 Create FK setup 🔧", height=40, bgc=(0.25, 0.25, 0.25), command=lambda x: create_control_rig())
+    cmds.setParent("..")
+    cmds.setParent("..")
+
+   
+
+    cmds.frameLayout(label="  Controller Shape Picker", collapsable=True, bgc=(0.2, 0.2, 0.2), mw=10, mh=5)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=5)
+    shape_menu = cmds.optionMenu("shapeMenu", label="Pick Shape", width=200)
+    for shape in ["circle", "box", "star", "arrow", "cube"]:
+        cmds.menuItem(label=shape)
+    cmds.button(label=" Apply Shape", bgc=(0.3, 0.3, 0.3), command=lambda x: apply_shape(cmds.optionMenu("shapeMenu", q=True, value=True)))
+    cmds.setParent("..")
+    cmds.setParent("..")
+    
+    cmds.frameLayout(label="  Controller Colorizer", collapsable=True, bgc=(0.2, 0.2, 0.2), mw=10, mh=5)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=5)
+    cmds.colorSliderGrp("colorSlider", label=" Pick Color", rgb=(1, 1, 0), columnWidth=(1, 80), height=30)
+    cmds.button(label=" Apply Color", bgc=(0.3, 0.3, 0.3), command=lambda x: apply_selected_color())
+    cmds.setParent("..")
+    cmds.setParent("..")
+
+    # Updated Reset section
+    cmds.frameLayout(label="  Controller Reset", collapsable=True, bgc=(0.2, 0.2, 0.2), mw=10, mh=5)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=5)
+    cmds.text(label=" Select controllers and reset all transformations ", align="center", height=25)
+    cmds.button(label="🔄 Reset All Transforms 🔄", height=35, bgc=(0.4, 0.25, 0.25), command=lambda x: reset_transformations())
+    cmds.setParent("..")
+    cmds.setParent("..")
+
+    cmds.separator(h=10, style="none")
+    cmds.text(label="DEVELOPED BY SERAG", align="center", height=20)
+
+    cmds.showWindow(window)
+
+def apply_selected_color():
+    rgb = cmds.colorSliderGrp("colorSlider", q=True, rgb=True)
+    apply_control_color(*rgb)
+
+show_ui()
